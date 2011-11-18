@@ -1,13 +1,12 @@
 fs = require 'fs'
 
-logFd = fs.openSync "ai-log", "a"
-exports.log = (line) ->
-	fs.writeSync logFd, "#{line}\n"
-
 class exports.AIChallenger
 	
-	rowColToKey = (row, col) -> ((row << 16) | col)
-	keyToRowCol = (key) -> [(key >> 16), (key & 0xffff)]
+	toRC = (row, col) -> ((row << 16) | col)
+	fromRC = (key) -> [(key >> 16), (key & 0xffff)]
+	
+	toRC: toRC
+	fromRC: fromRC
 	
 	start: ->
 		@water = {}
@@ -59,7 +58,7 @@ class exports.AIChallenger
 				[row, col, owner] = line[1..]
 				row = parseInt(row)
 				col = parseInt(col)
-				key = rowColToKey(row, col)
+				key = toRC(row, col)
 				val = if owner? then parseInt(owner) else true
 				
 				switch command
@@ -75,26 +74,24 @@ class exports.AIChallenger
 					#log "config[#{command}] = #{value}"
 					this[command] = parseInt(value)
 
-	order: (row, col, dir) ->
-		key = rowColToKey(row, col)
-		@orders[key] = dir
+	order: (rc, dir) ->
+		@orders[rc] = dir
 	
 	go: ->
-		for key, dir of @orders
-			[row, col] = keyToRowCol(key)
-			fs.writeSync process.stdout.fd, "o #{row} #{col} #{dir}\n"
+		for rc, dir of @orders
+			[row, col] = fromRC(rc)
+			process.stdout.write "o #{row} #{col} #{dir}\n"
 		
 		@orders = {}
-		fs.writeSync process.stdout.fd, "go\n"
+		process.stdout.write "go\n"
 		process.stdout.flush()
 
 	eachOwnAnt: (func) ->
-		for key, team of @ants
-			return if team != 0
-			rowCol = keyToRowCol(key)
-			func(rowCol[0], rowCol[1])
+		for rc, team of @ants
+			func(rc) if team == 0
 	
-	direction: (row, col, dir) ->
+	direction: (rc, dir) ->
+		[row, col] = fromRC(rc)
 		switch dir
 			when "N" then row = row - 1
 			when "S" then row = row + 1
@@ -102,21 +99,17 @@ class exports.AIChallenger
 			when "E" then col = col + 1
 		row = (row + @rows) % @rows
 		col = (col + @cols) % @cols
-		[row, col]
+		toRC(row, col)
 	
-	validMove: (row, col, dir) ->
-		[row, col] = @direction(row, col, dir)
-		key = rowColToKey(row, col)
-		!(@water[key]? || @ants[key]?)
+	valid: (rc) ->
+		!(@water[rc]? || @ants[rc]?)
 		
-	whatsat: (row, col) ->
-		key = rowColToKey(row, col)
-		
+	whatsat: (rc) ->
 		what = []
-		what.push "water" if @water[key]?
-		what.push "hill" if @hills[key]?
-		what.push "food" if @food[key]?
-		what.push "ant" if @ants[key]?
-		what.push "dead" if @deads[key]?
+		what.push "water" if @water[rc]?
+		what.push "hill" if @hills[rc]?
+		what.push "food" if @food[rc]?
+		what.push "ant" if @ants[rc]?
+		what.push "dead" if @deads[rc]?
 		
 		what
